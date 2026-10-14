@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ЦОД СБЕРБАНК // Защита от БПЛА</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-950 flex flex-col items-center justify-center min-h-screen text-slate-100 p-2">
+
+  <!-- Main Game Container -->
+  <div id="gameWrapper" class="relative select-none">
+    
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- TOP HUD: Sber DC Integrity, Wave Status, Radar & Score -->
+    <div class="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10 gap-3">
+      
+      <!-- Sber Data Center Health Card -->
+      <div class="glass-panel sber-glow-border rounded-xl px-4 py-2 flex items-center gap-3 pointer-events-auto">
+        <div class="w-8 h-8 rounded-full bg-emerald-600/30 border border-emerald-400 flex items-center justify-center text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5l-4-4 1.41-1.41L11 13.67l6.59-6.59L19 8.5l-8 8z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center justify-between text-xs font-semibold tracking-wider text-slate-300">
+            <span>ЦОД СБЕРБАНК</span>
+            <span id="dcHpText" class="mono-font text-emerald-400 font-bold ml-2">100%</span>
+          </div>
+          <div class="w-36 h-2.5 bg-slate-800 rounded-full overflow-hidden mt-1 border border-slate-700/80">
+            <div id="dcHpBar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wave / Threat Status -->
+      <div class="glass-panel rounded-xl px-5 py-2 flex flex-col items-center pointer-events-auto min-w-[200px]">
+        <div class="text-[10px] tracking-widest uppercase text-slate-400 font-semibold">Статус Обороны</div>
+        <div id="currentWaveText" class="mono-font text-base font-bold text-emerald-400">ВОЛНА 1 / 5</div>
+        <div class="w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+          <div id="waveProgressBar" class="h-full bg-emerald-500 transition-all" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Right Side: Tactical Radar, Score & Sound Toggle -->
+      <div class="flex items-center gap-2 pointer-events-auto">
+        <!-- Circular Mini Radar -->
+        <div class="glass-panel p-1 rounded-full flex items-center justify-center">
+          <canvas id="radarCanvas" width="72" height="72"></canvas>
+        </div>
+
+        <!-- Score & Kills Badge -->
+        <div class="glass-panel rounded-xl px-3 py-1.5 flex flex-col justify-center text-right min-w-[100px]">
+          <div class="text-[10px] text-slate-400 uppercase font-semibold">Счет: <span id="hudScore" class="mono-font text-emerald-400 font-bold">0</span></div>
+          <div class="text-[10px] text-slate-400 uppercase font-semibold">Сбито: <span id="hudKills" class="mono-font text-amber-400 font-bold">0</span></div>
+        </div>
+
+        <!-- Audio Mute Button -->
+        <button id="btnMute" class="glass-panel w-9 h-9 rounded-xl flex items-center justify-center text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all text-sm" title="Звук">
+          🔊
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Threat Alert Banner (Appears during Boss / Warnings) -->
+    <div id="threatBanner" class="hidden absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+      <div class="glass-panel alarm-pulsing rounded-xl px-6 py-2 border-2 border-red-500 bg-red-950/80 flex items-center gap-3 shadow-[0_0_30px_rgba(239,68,68,0.7)]">
+        <span class="text-xl animate-bounce">🚨</span>
+        <span id="threatBannerText" class="mono-font font-extrabold text-sm tracking-wider text-red-300 uppercase">
+          ТРЕВОГА! ВЫЛЕТЕЛА БАЛЛИСТИЧЕСКАЯ РАКЕТА ФЛАМИНГО!
+        </span>
+      </div>
+    </div>
+
+    <!-- BOTTOM HUD: Weapons Bar & Controls Info -->
+    <div class="absolute bottom-3 left-3 right-3 flex items-end justify-between pointer-events-none z-10">
+      
+      <!-- Weapons Selector Cards -->
+      <div class="flex items-center gap-3 pointer-events-auto">
+        
+        <!-- Weapon 1: Heavy Machine Gun (ТКП-12.7) -->
+        <div id="cardWeaponMg" class="glass-panel rounded-xl p-2.5 flex items-center gap-3 border-2 border-emerald-500 bg-slate-800/90 transition-all">
+          <div class="w-8 h-8 rounded-lg bg-emerald-950/80 border border-emerald-600 flex items-center justify-center font-bold text-xs mono-font text-emerald-400">
+            [1]
+          </div>
+          <div>
+            <div class="flex items-center justify-between gap-4">
+              <span class="text-xs font-bold text-slate-200 tracking-wide">ТЯЖЕЛЫЙ ПУЛЕМЕТ 12.7</span>
+              <span class="mono-font text-xs font-black text-emerald-400">
+                <span id="mgAmmoCount">150</span><span class="text-slate-400 text-[10px]"> / 150</span>
+              </span>
+            </div>
+            <!-- Ammo bar -->
+            <div class="w-36 h-2 bg-slate-900 rounded-full overflow-hidden mt-1 border border-slate-700">
+              <div id="mgAmmoBar" class="h-full bg-emerald-400 transition-all duration-75" style="width: 100%;"></div>
+            </div>
+            <div id="mgReloadStatus" class="hidden text-[10px] mono-font text-amber-400 font-bold mt-0.5 animate-pulse">
+              ПЕРЕЗАРЯДКА [R]...
+            </div>
+          </div>
+        </div>
+
+        <!-- Weapon 2: Guided Missiles "Вихрь-1" -->
+        <div id="cardWeaponMissile" class="glass-panel rounded-xl p-2.5 flex items-center gap-3 border-2 border-slate-700 bg-slate-900/60 transition-all">
+          <div class="w-8 h-8 rounded-lg bg-amber-950/80 border border-amber-600 flex items-center justify-center font-bold text-xs mono-font text-amber-400">
+            [2]
+          </div>
+          <div>
+            <div class="flex items-center justify-between gap-4">
+              <span class="text-xs font-bold text-slate-200 tracking-wide">УР "ВИХРЬ-1" (УПРАВЛЯЕМЫЕ)</span>
+              <span id="missileCount" class="mono-font text-xs font-black text-amber-400">5/5</span>
+            </div>
+            <!-- Missile Pips -->
+            <div id="missilePips" class="flex gap-1 mt-1">
+              <!-- Dynamically populated -->
+            </div>
+            <div id="missileRegenTimer" class="text-[10px] mono-font text-slate-400 mt-0.5">
+              БОЕКОМПЛЕКТ ПОЛОН
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Controls Quick Guide -->
+      <div class="glass-panel rounded-xl px-4 py-2 text-right pointer-events-auto">
+        <div class="text-[11px] text-slate-300 flex items-center gap-2">
+          <span class="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] mono-font font-bold text-emerald-400 border border-slate-700">WASD</span>
+          <span>Управление машиной МОГ</span>
+          <span class="text-slate-600">|</span>
+          <span class="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] mono-font font-bold text-amber-400 border border-slate-700">ЛКМ</span>
+          <span>Огонь</span>
+          <span class="text-slate-600">|</span>
+          <span class="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] mono-font font-bold text-sky-400 border border-slate-700">ПКМ</span>
+          <span>Прицел (Zoom)</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MODAL: Start Screen / Briefing -->
+    <div id="startModal" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-30">
+      <div class="glass-panel sber-glow-border max-w-lg w-full p-6 rounded-2xl text-center shadow-2xl">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-600/20 border border-emerald-500/50 mb-3 text-emerald-400">
+          <svg class="w-8 h-8 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5l-4-4 1.41-1.41L11 13.67l6.59-6.59L19 8.5l-8 8z"/>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-black tracking-tight text-white mb-1">ОБОРОНА ЦОД СБЕРБАНКА</h1>
+        <p class="text-xs text-emerald-400 font-semibold tracking-wider uppercase mb-4">Мобильная Оперативная Группа (МОГ) // ПВО Периметра</p>
+
+        <div class="bg-slate-900/80 rounded-xl p-4 text-left text-xs text-slate-300 space-y-2.5 mb-5 border border-slate-800">
+          <div class="flex items-start gap-2">
+            <span class="text-emerald-400 font-bold">🎯 Задача:</span>
+            <span>Защитить ЦОД Сбербанка от волн ударных БПЛА. Не допустите падения прочности комплекса до 0%!</span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-emerald-400 font-bold">🔫 Пулемет:</span>
+            <span>Кассета на 150 патронов (бесконечный запас, перезарядка на <kbd class="px-1 py-0.5 bg-slate-800 rounded border border-slate-700">R</kbd>).</span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-amber-400 font-bold">🚀 Вихрь-1:</span>
+            <span>Запас 5 управляемых ракет. Следуют за курсором мыши! Восстановление: <b>+1 ракета каждые 30 сек</b>.</span>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-sky-400 font-bold">🔍 Прицел:</span>
+            <span>Удерживайте <kbd class="px-1 py-0.5 bg-slate-800 rounded border border-slate-700">ПКМ</kbd> для зума и снайперского наведения по высотным дронам.</span>
+          </div>
+          <div class="flex items-start gap-2 text-red-300">
+            <span class="text-red-400 font-bold">⚠️ Внимание:</span>
+            <span>Каждые 5 волн вылетает баллистическая ракета <b>«ФЛАМИНГО»</b> (x2 прочность). При ее пуске звучит военная тревога!</span>
+          </div>
+        </div>
+
+        <button id="btnStartGame" class="btn-tactical w-full text-base py-3 uppercase tracking-wider font-extrabold">
+          Принять бой // Запустить систему
+        </button>
+      </div>
+    </div>
+
+    <!-- MODAL: Victory Screen -->
+    <div id="victoryModal" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-30">
+      <div class="glass-panel sber-glow-border max-w-md w-full p-6 rounded-2xl text-center shadow-2xl">
+        <div class="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 mx-auto mb-3 flex items-center justify-center text-3xl">
+          🏆
+        </div>
+        <h2 class="text-2xl font-black text-emerald-400 mb-1">ПОБЕДА! ЦОД СБЕРБАНКА ЗАЩИЩЕН!</h2>
+        <p class="text-xs text-slate-400 mb-5">Все 5 волн БПЛА и баллистическая ракета «Фламинго» успешно уничтожены.</p>
+
+        <div class="bg-slate-900/80 rounded-xl p-4 mb-5 border border-slate-800 grid grid-cols-3 gap-2 text-center">
+          <div>
+            <div class="text-[10px] uppercase text-slate-400">Счет</div>
+            <div id="victoryScore" class="mono-font text-lg font-black text-emerald-400">0</div>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase text-slate-400">Сбито БПЛА</div>
+            <div id="victoryDrones" class="mono-font text-lg font-black text-amber-400">0</div>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase text-slate-400">ЦОД Сбер</div>
+            <div id="victoryDcHp" class="mono-font text-lg font-black text-emerald-400">100%</div>
+          </div>
+        </div>
+
+        <button class="btn-restart btn-tactical w-full text-sm py-2.5 uppercase font-bold">
+          Играть снова
+        </button>
+      </div>
+    </div>
+
+    <!-- MODAL: Game Over Screen -->
+    <div id="gameOverModal" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-30">
+      <div class="glass-panel border-red-500 max-w-md w-full p-6 rounded-2xl text-center shadow-2xl">
+        <div class="w-16 h-16 rounded-full bg-red-500/20 border-2 border-red-400 mx-auto mb-3 flex items-center justify-center text-3xl">
+          💥
+        </div>
+        <h2 class="text-2xl font-black text-red-500 mb-1">ЦОД СБЕРБАНКА УНИЧТОЖЕН</h2>
+        <p class="text-xs text-slate-400 mb-5">Серверные кластеры выведены из строя ударами противника.</p>
+
+        <div class="bg-slate-900/80 rounded-xl p-4 mb-5 border border-slate-800 grid grid-cols-2 gap-4 text-center">
+          <div>
+            <div class="text-[10px] uppercase text-slate-400">Итоговый счет</div>
+            <div id="gameOverScore" class="mono-font text-lg font-black text-white">0</div>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase text-slate-400">Отражено волн</div>
+            <div id="gameOverWaves" class="mono-font text-lg font-black text-amber-400">0 / 5</div>
+          </div>
+        </div>
+
+        <button class="btn-restart btn-tactical w-full text-sm py-2.5 uppercase font-bold bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 border-red-500">
+          Попробовать снова
+        </button>
+      </div>
+    </div>
+
+    <!-- MODAL: Pause Screen -->
+    <div id="pauseModal" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-30">
+      <div class="glass-panel max-w-xs w-full p-5 rounded-2xl text-center">
+        <h3 class="text-lg font-black text-slate-200 mb-4">ПАУЗА [ESC]</h3>
+        <button id="btnResume" class="btn-tactical w-full text-xs py-2 uppercase font-bold mb-2">
+          Продолжить
+        </button>
+        <button class="btn-restart glass-panel w-full text-xs py-2 uppercase font-bold text-slate-300 hover:bg-slate-800">
+          Начать заново
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Game Scripts (loaded in dependency order) -->
+  <script src="src/audio.js"></script>
+  <script src="src/sprites.js"></script>
+  <script src="src/particles.js"></script>
+  <script src="src/weapons.js"></script>
+  <script src="src/enemies.js"></script>
+  <script src="src/player.js"></script>
+  <script src="src/waves.js"></script>
+  <script src="src/game.js"></script>
+</body>
+</html>
